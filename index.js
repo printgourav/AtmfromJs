@@ -1,66 +1,101 @@
 import inquirer from 'inquirer';
-let ava_bal = Math.floor(Math.random()*10000000);
-let CORRECT_PASSWORD = "admin123";
+import bcrypt from 'bcrypt';
+import sqlite3 from 'sqlite3'
+let ava_bal;
+let password_hash;
 
+const db = new sqlite3.Database("atm_data.db", sqlite3.OPEN_READWRITE);
 function checkandRun(optask){
-    inquirer.prompt([
-        {   
+    db.get("SELECT password_hash FROM atm_ops",(err, row) => {
+        if (err){
+            console.error("Database Error:", err.message);
+            return;
+        }
+
+        if (!row||!row.password_hash){
+            console.log("No Password found");
+            return;
+        } password_hash = row.password_hash;
+
+    inquirer.prompt([{   
             name:    'confirm',
             type:    'confirm',
             message: 'Are You Sure you want to proceed?',
         }
-    ])      //.then(({confirm})) => {}) //destructuring
-    .then((answers) => {
+    ]) //.then(({confirm})) => {}) //destructuring
+.then((answers) => {
         const confirm = answers.confirm;
         if(!confirm){
             console.log("Transaction Cancelled");
             return;
-        }
-        return inquirer.prompt([
+    } return inquirer.prompt([
             {
             type: 'password',
             name: 'password',
             message: 'Please Enter Your Password',
             mask: '*',
-
         }
      ]);
     }).then((answer) => {
+        if(!answer) return;
         const entrd_password = answer.password;
-        if(entrd_password !== CORRECT_PASSWORD){
-            console.error("Incorrect Password. Please check before you re-entered");
-            return;
-        }
-        optask();
+        bcrypt.compare(entrd_password,password_hash)
+        .then(match =>{  //.then (function (match) 
+            if(!match){
+                console.log("Please Check Your Password");
+                return ;
+            }
+            optask();
+        })
     }).catch(err =>{
         console.error("Something went wrong please retry", err);
+        });
     });
 }
+
 function avail_bal(){
-    console.log(`Your available balance is ₹ ${ava_bal}`);
-    mainMenu();
+    db.get("SELECT balance FROM atm_ops",(err, row) =>{
+        if (err){
+            console.error("Database Error:", err.message);
+            return;
+        }
+        if(!row || !row.balance === undefined){
+            console.log("No Data Found !");
+            return;
+        }
+        ava_bal = row.balance
+        console.log(`Your Available Balance is ₹ ${ava_bal}`);
+        mainMenu()
+    })    
 }
+
 function withdraw(){
-    inquirer
-        .prompt({
+    inquirer.prompt({
         type:    'input',
         message: 'Enter Your Amount here ₹',
         name:    'withdrawal_value',
-
-    }).then((answers) => {
+    })
+    .then((answers) => {
         const amount = parseInt(answers.withdrawal_value);
-
     if (amount < ava_bal) {
-        
         ava_bal -= amount;
-        console.log(`Your Request for withdraw of amount ₹${amount} Your Available Balance is ₹${ava_bal}`)
-    
-    }
-    else {
-    console.log("Please Check with your Amount entered, couldnt Process Your transaction");
-    }
-  });
-};
+        db.run("UPDATE atm_ops SET balance = ?", [ava_bal], function(err) {
+            if(err) {
+                console.error(`Failed to Update Balance is`, err.message);
+                return;
+            } console.log(`Your Request for withdraw of amount ₹${amount} Your Available Balance is ₹${ava_bal}`) 
+        console.log(`Your Updated Balance is ${ava_bal}`);
+        mainMenu();
+    });
+  }else{
+    console.log("Insufficient Balance. Please Check the Amount")
+  }
+})
+.catch((err) =>{
+    console.error("Something went wrong", err.message);
+ });
+}
+
 
 function mainMenu(){
     inquirer.prompt([
@@ -75,8 +110,7 @@ function mainMenu(){
             
             ],
         },
-    ])
-    .then((answers) => {
+    ]).then((answers) => {
         switch(answers.AtmMenu){
             case 'balance inquiry': checkandRun(avail_bal);
                 break;
